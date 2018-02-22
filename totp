@@ -291,7 +291,7 @@ base32d() {
 # main..?
 ##########################################################################
 
-select ans in 'tea test' 'totp test' 'quit'; do
+select ans in 'tea test' 'try tea' 'totp test' 'quit'; do
   case $ans in
     'tea test') test_tea ;;
     'totp test') 
@@ -299,6 +299,8 @@ select ans in 'tea test' 'totp test' 'quit'; do
       read -r -p 'base32 secret: ' secret
       totp "$(base32d "$secret")" 30 6
       ;;
+    'try tea')
+      do_tea ;;
     'quit')
       exit 0
   esac
