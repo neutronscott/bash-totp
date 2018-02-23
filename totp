@@ -247,7 +247,7 @@ sha1() {
 ##########################################################################
 
 # totp(key[, step[, digits]])
-#    key: base32 encoded
+#    key: hex encoded
 #   step: usually 30 seconds
 # digits: 6 (default) or 8
 totp() {
@@ -267,13 +267,12 @@ base32d() {
   for ((i = 0; i < ${#in}; i++ )); do
     c=${in:i+j:1}
     [[ $c = [[:space:]-] ]] && continue
-    # the entire point of skipping these is to compensate for it...
     [[ $c = 0 ]] && c=O
     [[ $c = 1 ]] && c=L
     [[ $c = 8 ]] && c=B
-    idx=${v%%$c*}
-    if [[ $idx = *! ]]; then
-      printf 'Erroneous char: %s\n' "$c"
+    idx=${v%%${c^^}*}
+    if [[ $idx = $v ]]; then
+      printf 'Erroneous char: %s\n' "$c" >&2
       continue
     fi
     (( buffer <<= 5 ))
@@ -291,17 +290,58 @@ base32d() {
 # main..?
 ##########################################################################
 
-select ans in 'tea test' 'try tea' 'totp test' 'quit'; do
+savefile="tokens.save"
+
+add_token() {
+  read -r -p 'Issuer: ' issuer
+  read -r -p 'Base32 secret: ' secret
+  read -r -p 'Period: ' period
+  read -r -p 'Digits (6 or 8): ' digits
+  tokens+=( "$issuer" "$secret" "$period" "$digits" )
+}
+
+save_tokens() {
+  local key txt enc
+
+  read -r -p 'Encryption key: ' key
+  key=$(sha1 "$(str2hex "$key")")
+  key=$(swab "${key:0:128}")
+  txt=$(swab "$(str2hex "$(declare -p tokens)")")
+  enc=$(xxtea "$key" "$txt")
+  printf '%s\n' "$enc" > "$savefile"
+}
+
+load_tokens() {
+  local key txt dec
+  read -r -p 'Encryption key: ' key
+  key=$(sha1 "$(str2hex "$key")")
+  key=$(swab "${key:0:128}")
+  read -r -p 'Ciphertext(HEX): ' txt < "$savefile" 
+  dec=$(xxtea "$key" "$(swab "$txt")" d)
+  [[ $dec = 6465636C617265* ]] || {
+    printf 'Unable to decrypt. Check key.\n' >&2
+    return 1
+  }
+  printf '%s\n' "$dec"
+}
+
+tokens=(
+  "google"   "twok vr4i mpz3 e6fs 4s5w kh5q ibxx bpwy" 30 6
+  "facebook" "koni tih7 tjjm t46q plod fztp c6no tgjs" 30 6
+  "github"   "5e2i zsml 5qq7 xsu2 26la msgq w6yw 4wej" 30 6
+)
+
+while :; do
+  for ((i = 0; i < ${#tokens[@]}; i += 4)); do
+    printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}")"
+  done
+  printf '(A)dd (D)el (S)ave (L)oad (Q)uit: '
+  read -r ans
   case $ans in
-    'tea test') test_tea ;;
-    'totp test') 
-      # test code from http://security-totp.appspot.com/
-      read -r -p 'base32 secret: ' secret
-      totp "$(base32d "$secret")" 30 6
-      ;;
-    'try tea')
-      do_tea ;;
-    'quit')
-      exit 0
+    A*|a*) add_token ;;
+    D*|d*) del_token ;;
+    S*|s*) save_tokens ;;
+    L*|l*) load_tokens ;;
+    Q*|q*) exit 0 ;;
   esac
 done
