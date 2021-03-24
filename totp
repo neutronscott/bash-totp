@@ -147,7 +147,7 @@ do_tea() {
   local pass sha1 key ans line
 
   read -rs -p 'Passphrase: ' pass < /dev/tty
-  sha1=$(sha1sum <<< "$pass")
+  sha1=$(sha1 "$(str2hex "$pass")")
   key=${sha1:0:32}
   printf '\nKey: %s\n' "$key"
   read -r -p '(e)ncrypt / (d)ecrypt: ' ans
@@ -335,13 +335,15 @@ while :; do
   for ((i = 0; i < ${#tokens[@]}; i += 4)); do
     printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}")"
   done
-  printf '(A)dd (D)el (S)ave (L)oad (Q)uit: '
+  printf '(A)dd (D)el (S)ave (L)oad (T)est (X)XTEA (Q)uit: '
   read -r ans
   case $ans in
     A*|a*) add_token ;;
     D*|d*) del_token ;;
     S*|s*) save_tokens ;;
     L*|l*) load_tokens ;;
+    T*|t*) test_tea ;;
+    X*|x*) do_tea ;;
     Q*|q*) exit 0 ;;
   esac
 done
