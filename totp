@@ -4,6 +4,16 @@
 # TODO:
 # back to the user-selectable width in swab function
 # pad80 the xxtea key if < 128 bit, or sha1 it
+
+# bash3 compat
+if (( ${BASH_VERSINFO[0]} < 4 )); then
+  toupper() { echo "$1" | tr '[:lower:]' '[:upper:]'; }
+  epoch() { awk 'BEGIN{srand(); print srand()}'; }
+else
+  toupper() { printf '%s' "${1^^}"; }
+  epoch() { printf '%(%s)T' -1; }
+fi
+
 swab() {
   local i h hex v=$1
   for ((i = 0; i < ${#v}; i += 8)); do
@@ -132,7 +142,7 @@ test_tea() {
     enc=$(xxtea "$key" "$plaintext")
     dec=$(xxtea "$key" "$(swab "$enc")" d)
     txt=$(hex2str "$dec")
-    printf 'Plaintext[%s] Encrypted[%s] Expected[%s] Decrypted[%s] Text[%q]\n' "$plaintext" "$enc" "${ciphertext^^}" "$dec" "$txt"
+    printf 'Plaintext[%s] Encrypted[%s] Expected[%s] Decrypted[%s] Text[%q]\n' "$plaintext" "$enc" "$(toupper "$ciphertext")" "$dec" "$txt"
   done << EOF
 00000000000000000000000000000000 0000000000000000 ab043705808c5d57
 0102040810204080fffefcf8f0e0c080 0000000000000000 d1e78be2c746728a
@@ -253,7 +263,7 @@ sha1() {
 totp() {
   local key=$1 step=${2:- 30} digits=${3:- 6} time
 
-  printf -v time '%(%s)T' -1
+  time=$(epoch)
   printf -v step '%016X' "$((time / step))"
   dgst=$(sha1_hmac "$key" "$step")
   offset=$(( 2 * 16#${dgst: -1} ))
@@ -262,7 +272,7 @@ totp() {
 }
 
 base32d() {
-  local in=$1 c buffer idx bitsLeft=0 count=0 result
+  local in=$(toupper "$1") c buffer idx bitsLeft=0 count=0 result
   local v='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567!'
   for ((i = 0; i < ${#in}; i++ )); do
     c=${in:i+j:1}
@@ -270,7 +280,7 @@ base32d() {
     [[ $c = 0 ]] && c=O
     [[ $c = 1 ]] && c=L
     [[ $c = 8 ]] && c=B
-    idx=${v%%${c^^}*}
+    idx=${v%%${c}*}
     if [[ $idx = $v ]]; then
       printf 'Erroneous char: %s\n' "$c" >&2
       continue
