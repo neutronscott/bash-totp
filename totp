@@ -133,9 +133,18 @@ xxtea() {
   echo "$hex"
 }
 
-test_tea() {
+test_func() {
   local key plaintext ciphertext enc dec txt
 
+  printf '\nHMAC tests:\n'
+  key=key
+  txt='The quick brown fox jumps over the lazy dog'
+  printf 'HMAC_SHA1  (%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha1   "$(str2hex "$key")" "$(str2hex "$txt")")"
+  printf 'HMAC_SHA1o (%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha1o  "$(str2hex "$key")" "$(str2hex "$txt")")"
+  printf 'HMAC_SHA256(%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha256 "$(str2hex "$key")" "$(str2hex "$txt")")"
+  printf 'HMAC_SHA512(%s, %s)=%s\n' "$key" "$txt" "$(hmac_sha512 "$(str2hex "$key")" "$(str2hex "$txt")")"
+
+  printf '\nTEA tests:\n'
   while read -r key plaintext ciphertext; do
     key=$(swab "$key")
     plaintext=$(swab "$plaintext")
@@ -178,12 +187,16 @@ do_tea() {
   esac
 }
 
+hmac_sha512() { printf %s "$2" | xxd -r -p | openssl dgst -sha512 -mac hmac -macopt hexkey:$1 | cut -f2 -d' '; }
+hmac_sha256() { printf %s "$2" | xxd -r -p | openssl dgst -sha256 -mac hmac -macopt hexkey:$1 | cut -f2 -d' '; }
+hmac_sha1o()  { printf %s "$2" | xxd -r -p | openssl dgst -sha1   -mac hmac -macopt hexkey:$1 | cut -f2 -d' '; }
+
 ##########################################################################
 # SHA-1 in bash
 # Reference implementation from: https://en.wikipedia.org/wiki/SHA-1
 ##########################################################################
 
-sha1_hmac() {
+hmac_sha1() {
   local key=$1 msg=$2 i
   # key needs to be same as sha1 blocksize
   if (( ${#key} > 128 )); then
@@ -256,16 +269,22 @@ sha1() {
 # TOTP in bash
 ##########################################################################
 
-# totp(key[, step[, digits]])
+# totp(key, hash[, step[, digits]])
 #    key: hex encoded
 #   step: usually 30 seconds
 # digits: 6 (default) or 8
 totp() {
-  local key=$1 step=${2:- 30} digits=${3:- 6} time
+  local key=$1 hash=$2 step=${3:- 30} digits=${4:- 6} time
 
   time=$(epoch)
   printf -v step '%016X' "$((time / step))"
-  dgst=$(sha1_hmac "$key" "$step")
+  case $hash in
+    sha512) dgst=$(hmac_sha512 "$key" "$step") ;;
+    sha256) dgst=$(hmac_sha256 "$key" "$step") ;;
+     sha1o) dgst=$(hmac_sha1o  "$key" "$step") ;;
+         *) dgst=$(hmac_sha1   "$key" "$step") ;;
+  esac
+
   offset=$(( 2 * 16#${dgst: -1} ))
   token=$(( ( 16#${dgst:offset:8} & 0x7fffffff ) % 10**digits ))
   printf '%06d\n' "$token"
@@ -335,15 +354,17 @@ load_tokens() {
   printf '%s\n' "$dec"
 }
 
+# test again https://blog.dataforce.org.uk/2019/03/fun-with-totp-codes/demo/
 tokens=(
-  "google"   "twok vr4i mpz3 e6fs 4s5w kh5q ibxx bpwy" 30 6
-  "facebook" "koni tih7 tjjm t46q plod fztp c6no tgjs" 30 6
-  "github"   "5e2i zsml 5qq7 xsu2 26la msgq w6yw 4wej" 30 6
+  "sha1"   "SECRETCODE" sha1   30 6
+  "sha1o"  "SECRETCODE" sha1o  30 6
+  "sha256" "SECRETCODE" sha256 30 6
+  "sha512" "SECRETCODE" sha512 30 6
 )
 
 while :; do
-  for ((i = 0; i < ${#tokens[@]}; i += 4)); do
-    printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}")"
+  for ((i = 0; i < ${#tokens[@]}; i += 5)); do
+    printf '%16s %8s\n' "${tokens[i]}" "$(totp "$(base32d "${tokens[i+1]}")" "${tokens[i+2]}" "${tokens[i+3]}" "${tokens[i+4]}")"
   done
   printf '(A)dd (D)el (S)ave (L)oad (T)est (X)XTEA (Q)uit: '
   read -r ans
@@ -352,7 +373,7 @@ while :; do
     D*|d*) del_token ;;
     S*|s*) save_tokens ;;
     L*|l*) load_tokens ;;
-    T*|t*) test_tea ;;
+    T*|t*) test_func ;;
     X*|x*) do_tea ;;
     Q*|q*) exit 0 ;;
   esac
